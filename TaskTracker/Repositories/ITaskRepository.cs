@@ -4,9 +4,9 @@ namespace TaskTracker.Repositories;
 
 public interface ITaskRepository
 {
-    List<TaskItem> GetAllTasks();
-    TaskItem? GetTaskById(int id);
-    void AddTask(TaskItem task);
-    void UpdateTask(TaskItem task);
-    void DeleteTask(int id);
+    Task<List<TaskItem>> GetAllTasksAsync();
+    Task<TaskItem?> GetTaskByIdAsync(int id);
+    Task AddTaskAsync(TaskItem task);
+    Task UpdateTaskAsync(TaskItem task);
+    Task DeleteTaskAsync(int id);
 }

@@ -1,4 +1,5 @@
-﻿using TaskTracker.Models;
+﻿using Microsoft.Extensions.Logging;
+using TaskTracker.Models;
 using TaskTracker.Repositories;
 
 namespace TaskTracker.Services;
@@ -6,30 +7,43 @@ namespace TaskTracker.Services;
 public class TaskService
 {
     private readonly ITaskRepository _repository;
-    private List<TaskItem> tasks;
+    private readonly ILogger<TaskService> _logger;
+    private List<TaskItem> tasks = new ();
     private int nextId = 1;
 
-    public TaskService(ITaskRepository repository)
+    public TaskService(
+        ITaskRepository repository,
+        ILogger<TaskService> logger)
     {
         _repository = repository;
-        tasks = _repository.GetAllTasks();
+        _logger = logger;
+    }
+
+    public async Task InitializeAsync()
+    {
+        tasks = await _repository.GetAllTasksAsync();
 
         if (tasks.Count > 0)
         {
             nextId = tasks.Max(t => t.Id) + 1;
         }
+        _logger.LogInformation($"TaskService initialized. NextId = {nextId}");
     }
 
-    public List<TaskItem> GetAllTasks()
+    public async Task<List<TaskItem>> GetAllTasksAsync()
     {
-        return _repository.GetAllTasks();
+        tasks = await _repository.GetAllTasksAsync();
+        return tasks.ToList();
     }
 
-    public string AddTask(string title)
+    public async Task<string> AddTaskAsync(string title)
     {
         if (string.IsNullOrWhiteSpace(title))
+        {
+            _logger.LogWarning("Attempt to add task with empty title");
             return "Task title should not be empty.";
-        
+        }
+
         TaskItem newTask = new TaskItem
         {
             Id = nextId++,
@@ -38,55 +52,65 @@ public class TaskService
             CreatedAt = DateTime.Now
         };
         
-        _repository.AddTask(newTask);
+        await _repository.AddTaskAsync(newTask);
+        _logger.LogInformation($"Task with id {newTask.Id} created.");
         return $"Task added: {title}.";
     }
 
-    public string MarkTaskAsDone(int id)
+    public async Task<string> MarkTaskAsDoneAsync(int id)
     {
         TaskItem? task = tasks.FirstOrDefault(t => t.Id == id);
         
         if (task == null)
         {
+            _logger.LogWarning($"Task with id {id} not found.");
             return $"Task with id {id} not found.";
         }
 
         task.IsDone = true;
-        _repository.UpdateTask(task);
+        await _repository.UpdateTaskAsync(task);
+        _logger.LogInformation($"Task {id} marked as done.");
         return $"Task {id} is done.";
     }
 
-    public string UpdateTaskTitle(int id, string title)
+    public async Task<string> UpdateTaskTitleAsync(int id, string title)
     {
         if (string.IsNullOrWhiteSpace(title))
-            return "Task title should not be empty.";
-
-        TaskItem? task = _repository.GetTaskById(id);
-        if (task is not null)
         {
-            task.Title = title;
-            _repository.UpdateTask(task);
-            return $"Task updated: {title}.";
+            _logger.LogWarning("Attempt to rename task {TaskId} with empty title.", id);
+            return "Task title should not be empty.";
         }
-        return $"Task with id {id} not found.";
+
+        TaskItem? task = tasks.FirstOrDefault(t => t.Id == id);
+        
+        if (task is null)
+            return $"Task with id {id} not found.";
+        
+        task.Title = title;
+        await _repository.UpdateTaskAsync(task);
+        
+        _logger.LogInformation($"Task {id} renamed to {title}.");
+        return $"Task updated: {title}.";
     }
 
-    public string DeleteTask(int id)
+    public async Task<string> DeleteTaskAsync(int id)
     {
-        // TaskItem task = tasks.FirstOrDefault(t => t.Id == id);
-        // if (task == null)
-        // {
-        //     return $"Task with id {id} not found.";
-        // }
+        TaskItem task = tasks.FirstOrDefault(t => t.Id == id);
+        if (task == null)
+        {
+            _logger.LogWarning("Task {TaskId} not found for delete.", id);
+            return $"Task with id {id} not found.";
+        }
     
-        // tasks.Remove(task);
-        _repository.DeleteTask(id);
+        tasks.Remove(task);
+        await _repository.DeleteTaskAsync(id);
+        _logger.LogInformation($"Task {id} deleted.");
         return "Task deleted";
     }
 
-    public List<TaskItem> GetTasksByFilter(TaskFilter filter)
+    public async Task<List<TaskItem>> GetTasksByFilterAsync(TaskFilter filter)
     {
-        tasks = _repository.GetAllTasks();
+        tasks = await _repository.GetAllTasksAsync();
         return filter switch
         {
             TaskFilter.All => tasks,
@@ -97,9 +121,9 @@ public class TaskService
     }
 
 
-    public List<TaskItem> GetSortedTasks(TaskSortOption sortOption)
+    public async Task<List<TaskItem>> GetSortedTasks(TaskSortOption sortOption)
     {
-        tasks = _repository.GetAllTasks();
+        tasks = await _repository.GetAllTasksAsync();
         return sortOption switch
         {
             TaskSortOption.ById => tasks.OrderBy(t => t.Id).ToList(),
@@ -109,9 +133,9 @@ public class TaskService
         };
     }
 
-    public List<TaskItem> SearchTasks(string keyword)
+    public async Task<List<TaskItem>> SearchTasksAsync(string keyword)
     {
-        tasks = _repository.GetAllTasks();
+        tasks = await _repository.GetAllTasksAsync();
         if (string.IsNullOrWhiteSpace(keyword))
             return new List<TaskItem>();
 

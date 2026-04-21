@@ -1,23 +1,32 @@
 ﻿using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using TaskTracker.Configurations;
 using TaskTracker.Models;
 
 namespace TaskTracker.Repositories;
 
 public class SqliteTaskRepository : ITaskRepository
 {
-    private const string ConnectionString = "Data Source=tasks.db";
+    private readonly string _connectionString;
+    private readonly ILogger<SqliteTaskRepository> _logger;
 
-    public SqliteTaskRepository()
+    public SqliteTaskRepository(
+        IOptions<DatabaseSettings> options,
+        ILogger<SqliteTaskRepository> logger)
     {
-        InitializeDatabase();
+        _connectionString = options.Value.ConnectionString;
+        _logger = logger;
+        
+        _logger.LogInformation("SqliteTaskRepository initialized with database source.");
     }
 
-    private void InitializeDatabase()
+    public async Task InitializeDatabaseAsync()
     {
         try
         {
-            using var connection = new SqliteConnection(ConnectionString);
-            connection.Open();
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
 
             string sql = """
                          CREATE TABLE IF NOT EXISTS Tasks (
@@ -27,30 +36,33 @@ public class SqliteTaskRepository : ITaskRepository
                              CreatedAt TEXT NOT NULL
                              );
                          """;
-            using var command = new SqliteCommand(sql, connection);
-            command.ExecuteNonQuery();
+            await using var command = new SqliteCommand(sql, connection);
+            await command.ExecuteNonQueryAsync();
+            
+            _logger.LogInformation("Database initialized successfully.");
         }
-        catch (SqliteException ex)
+        catch (Exception ex)
         {
-            throw new Exception("Database initialization error", ex);
+            _logger.LogError(ex, "Database initialization error");
+            throw;
         }
     }
 
-    public List<TaskItem> GetAllTasks()
+    public async Task<List<TaskItem>> GetAllTasksAsync()
     {
         try
         {
-            List<TaskItem> tasks = new List<TaskItem>();
+            List<TaskItem> tasks = new ();
         
-            using var connection = new SqliteConnection(ConnectionString);
-            connection.Open();
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
 
             string sql = "SELECT Id, Title, IsDone, CreatedAt FROM Tasks";
 
-            using var command = new SqliteCommand(sql, connection);
-            using var reader = command.ExecuteReader();
+            await using var command = new SqliteCommand(sql, connection);
+            await using var reader = await command.ExecuteReaderAsync();
 
-            while (reader.Read())
+            while (await reader.ReadAsync())
             {
                 TaskItem taskItem = new TaskItem
                 {
@@ -59,89 +71,83 @@ public class SqliteTaskRepository : ITaskRepository
                     IsDone = reader.GetInt32(2) == 1,
                     CreatedAt = DateTime.Parse(reader.GetString(3))
                 };
-            
+                
                 tasks.Add(taskItem);
             }
-        
+            _logger.LogInformation($"Loaded {tasks.Count} tasks from database.");
             return tasks;
         }
-        catch (SqliteException ex)
+        catch (Exception ex)
         {
-            throw new Exception("Database read error", ex);
-        }
-        catch (FormatException ex)
-        {
-            throw new Exception("Date format error in database: " + ex.Message);
+            _logger.LogError(ex, "Error while loading tasks from database");
+            throw;
         }
     }
 
-    public TaskItem? GetTaskById(int id)
+    public async Task<TaskItem?> GetTaskByIdAsync(int id)
     {
         try
         {
-            using var connection = new SqliteConnection(ConnectionString);
-            connection.Open();
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
 
             string sql = "SELECT * FROM tasks WHERE Id = @id;";
 
-            using var command = new SqliteCommand(sql, connection);
+            await using var command = new SqliteCommand(sql, connection);
             command.Parameters.AddWithValue("@id", id);
 
-            using var reader = command.ExecuteReader();
-            if (reader.Read())
+            await using var reader = await command.ExecuteReaderAsync();
+            if (!await reader.ReadAsync())
+                return null;
+
+            return new TaskItem
             {
-                return new TaskItem
-                {
-                    Id = reader.GetInt32(0),
-                    Title = reader.GetString(1),
-                    IsDone = reader.GetInt32(2) == 1,
-                    CreatedAt = DateTime.Parse(reader.GetString(3))
-                };
-            }
-            return null;
+                Id = reader.GetInt32(0),
+                Title = reader.GetString(1),
+                IsDone = reader.GetInt32(2) == 1,
+                CreatedAt = DateTime.Parse(reader.GetString(3))
+            };
         }
         catch (SqliteException ex)
         {
-            throw new Exception("Database read error", ex);
-        }
-        catch (FormatException ex)
-        {
-            throw new Exception("Date format error in database: " + ex.Message);
+            _logger.LogError(ex, "Error while searching a task");
+            throw;
         }
     }
 
-    public void AddTask(TaskItem task)
+    public async Task AddTaskAsync(TaskItem task)
     {
         try
         {
-            using var connection = new SqliteConnection(ConnectionString);
-            connection.Open();
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
 
             string insertSql = """
                                INSERT INTO Tasks (Id, Title, IsDone, CreatedAt)
                                VALUES (@id, @title, @isDone, @createdAt);
                                """;
 
-            using var insertCommand = new SqliteCommand(insertSql, connection);
+            await using var insertCommand = new SqliteCommand(insertSql, connection);
             insertCommand.Parameters.AddWithValue("@id", task.Id);
             insertCommand.Parameters.AddWithValue("@title", task.Title);
             insertCommand.Parameters.AddWithValue("@isDone", task.IsDone ? 1 : 0);
             insertCommand.Parameters.AddWithValue("@createdAt", task.CreatedAt.ToString("O"));
             
-            insertCommand.ExecuteNonQuery();
+            await insertCommand.ExecuteNonQueryAsync();
+            _logger.LogInformation($"Task with id {task.Id} successfully added.");
         }
         catch (SqliteException ex)
         {
-            throw new Exception("Database insert error", ex);
+            _logger.LogError(ex,"Error while adding a task");
         }
     }
 
-    public void UpdateTask(TaskItem task)
+    public async Task UpdateTaskAsync(TaskItem task)
     {
         try
         {
-            using var connection = new SqliteConnection(ConnectionString);
-            connection.Open();
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
 
             string sql = """
                          UPDATE Tasks 
@@ -151,36 +157,40 @@ public class SqliteTaskRepository : ITaskRepository
                          WHERE Id = @id;
                          """;
 
-            using var updateCommand = new SqliteCommand(sql, connection);
+            await using var updateCommand = new SqliteCommand(sql, connection);
             updateCommand.Parameters.AddWithValue("@id", task.Id);
             updateCommand.Parameters.AddWithValue("@title", task.Title);
             updateCommand.Parameters.AddWithValue("@isDone", task.IsDone ? 1 : 0);
             updateCommand.Parameters.AddWithValue("@createdAt", DateTime.Parse(task.CreatedAt.ToString("O")));
 
-            updateCommand.ExecuteNonQuery();
+            await updateCommand.ExecuteNonQueryAsync();
+            
+            _logger.LogInformation($"Task wit id {task.Id} successfully updated");
         }
         catch (SqliteException ex)
         {
-            throw new Exception("Database update error", ex);
+            _logger.LogError(ex, $"Error while updating task with id {task.Id}", ex);
         }
     }
 
-    public void DeleteTask(int id)
+    public async Task DeleteTaskAsync(int id)
     {
         try
         {
-            using var connection = new SqliteConnection(ConnectionString);
-            connection.Open();
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
 
             string sql = "DELETE FROM Tasks WHERE Id = @id;";
 
-            using var deleteCommand = new SqliteCommand(sql, connection);
+            await using var deleteCommand = new SqliteCommand(sql, connection);
             deleteCommand.Parameters.AddWithValue("@id", id);
-            deleteCommand.ExecuteNonQuery();
+            
+            await deleteCommand.ExecuteNonQueryAsync();
+            _logger.LogInformation($"Task with id {id} deleted.");
         }
         catch (SqliteException ex)
         {
-            throw new Exception("Database delete error", ex);
+            _logger.LogError(ex, $"Error while deleting task with id {id}");
         }
     }
 }
