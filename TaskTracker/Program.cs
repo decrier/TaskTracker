@@ -103,6 +103,7 @@ while (true)
                 Console.WriteLine("2. Completed tasks");
                 Console.WriteLine("3. Incompleted tasks");
                 Console.Write("Enter your choice: ");
+                Console.WriteLine("Enter your choice");
             
                 string? filterChoice = Console.ReadLine();
                 List<TaskItem> filteredTasks = filterChoice switch

@@ -23,47 +23,50 @@ public class TasksController : ControllerBase
     }
 
     [HttpGet("{id:int}")]
-    public async Task<ActionResult<TaskItem?>> GetTaskByIdAsync(int id)
+    public async Task<ActionResult<TaskItem>> GetTaskByIdAsync(int id)
     {
-        TaskItem? task = await _taskService.GetTaskByIdAsync(id);
+        var result = await _taskService.GetTaskByIdAsync(id);
 
-        if (task is null)
-            return NotFound();
+        if (!result.Success || result.Data == null)
+            return NotFound(new { message = result.Message});
         
-        return Ok(task);
+        return Ok(result.Data);
     }
 
     [HttpPost]
-    public async Task<ActionResult<TaskItem>> CreateTask([FromBody] CreateTaskRequest request)
+    public async Task<ActionResult> CreateTask([FromBody] CreateTaskRequest request)
     {
-        string result = await _taskService.AddTaskAsync(request.Title);
+        var result = await _taskService.AddTaskAsync(request.Title);
 
-        if (result == "Task title should not be empty.")
-            return BadRequest(new { message = result });
+        if (!result.Success)
+            return BadRequest(new { message = result.Message });
 
-        return Ok(new { message = result });
+        return Ok(new { message = result.Message });
     }
 
     [HttpPut("{id:int}")]
     public async Task<ActionResult<TaskItem>> UpdateTaskTitle(int id, [FromBody] UpdateTaskTitleRequest request)
     {
-        string result = await _taskService.UpdateTaskTitleAsync(id, request.Title);
-        if (result == "Task title should not be empty.")
-            return BadRequest(new { message = result });
+        var result = await _taskService.UpdateTaskTitleAsync(id, request.Title);
+        if (!result.Success)
+        {
+            if (result.Message.Contains("not found"))
+                return NotFound(new { message = result.Message });
+            
+            return BadRequest(new { message = result.Message });
+        }
 
-        if (result.Contains("not found"))
-            return NotFound(new { message = result });
-        
-        return Ok(new { message = result });
+        return Ok(new { message = result.Message });
     }
 
     [HttpDelete("{id:int}")]
-    public async Task<ActionResult<TaskItem?>> DeleteTaskByIdAsync(int id)
+    public async Task<ActionResult> DeleteTaskByIdAsync(int id)
     {
-        string result = await _taskService.DeleteTaskAsync(id);
-        if (result.Contains("not found"))
-            return NotFound(new {message = result });
+        var result = await _taskService.DeleteTaskAsync(id);
         
-        return Ok(new { message = result });
+        if (!result.Success)
+            return NotFound(new {message = result.Message });
+        
+        return Ok(new { message = result.Message });
     }
 }

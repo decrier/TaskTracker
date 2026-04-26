@@ -1,4 +1,5 @@
-﻿using TaskTracker.Api.Models;
+﻿using TaskTracker.Api.Common;
+using TaskTracker.Api.Models;
 using TaskTracker.Api.Repositories;
 
 namespace TaskTracker.Api.Services;
@@ -35,17 +36,25 @@ public class TaskService
         return tasks.ToList();
     }
 
-    public async Task<TaskItem?> GetTaskByIdAsync(int id)
+    public async Task<OperationResult<TaskItem>> GetTaskByIdAsync(int id)
     {
-        return await _repository.GetTaskByIdAsync(id);
+        var task = await _repository.GetTaskByIdAsync(id);
+
+        if (task is null)
+        {
+            _logger.LogWarning($"Task {id} not found");
+            return OperationResult<TaskItem>.Fail($"Task with id {id} not found");
+        }
+
+        return OperationResult<TaskItem>.Ok(task);
     }
 
-    public async Task<string> AddTaskAsync(string title)
+    public async Task<OperationResult> AddTaskAsync(string title)
     {
         if (string.IsNullOrWhiteSpace(title))
         {
             _logger.LogWarning("Attempt to add task with empty title");
-            return "Task title should not be empty.";
+            return OperationResult.Fail("Title task should not be empty");
         }
 
         TaskItem newTask = new TaskItem
@@ -57,59 +66,60 @@ public class TaskService
         };
         
         await _repository.AddTaskAsync(newTask);
+        
         _logger.LogInformation($"Task with id {newTask.Id} created.");
-        return $"Task added: {title}.";
+        return OperationResult.Ok($"Task added: {title}.");
     }
 
-    public async Task<string> MarkTaskAsDoneAsync(int id)
+    public async Task<OperationResult> MarkTaskAsDoneAsync(int id)
     {
         TaskItem? task = tasks.FirstOrDefault(t => t.Id == id);
         
         if (task == null)
         {
             _logger.LogWarning($"Task with id {id} not found.");
-            return $"Task with id {id} not found.";
+            return OperationResult.Fail($"Task with id {id} not found.");
         }
 
         task.IsDone = true;
         await _repository.UpdateTaskAsync(task);
         _logger.LogInformation($"Task {id} marked as done.");
-        return $"Task {id} is done.";
+        return OperationResult.Ok($"Task {id} is done.");
     }
 
-    public async Task<string> UpdateTaskTitleAsync(int id, string title)
+    public async Task<OperationResult> UpdateTaskTitleAsync(int id, string title)
     {
         if (string.IsNullOrWhiteSpace(title))
         {
             _logger.LogWarning("Attempt to rename task {TaskId} with empty title.", id);
-            return "Task title should not be empty.";
+            return OperationResult.Fail("Task title should not be empty.");
         }
 
-        TaskItem? task = tasks.FirstOrDefault(t => t.Id == id);
+        TaskItem? task = await _repository.GetTaskByIdAsync(id);
         
         if (task is null)
-            return $"Task with id {id} not found.";
+            return OperationResult.Fail($"Task with id {id} not found.");
         
         task.Title = title;
         await _repository.UpdateTaskAsync(task);
         
         _logger.LogInformation($"Task {id} renamed to {title}.");
-        return $"Task updated: {title}.";
+        return OperationResult.Ok($"Task updated: {title}.");
     }
 
-    public async Task<string> DeleteTaskAsync(int id)
+    public async Task<OperationResult> DeleteTaskAsync(int id)
     {
-        TaskItem task = tasks.FirstOrDefault(t => t.Id == id);
+        TaskItem task = await _repository.GetTaskByIdAsync(id);
         if (task == null)
         {
             _logger.LogWarning("Task {TaskId} not found for delete.", id);
-            return $"Task with id {id} not found.";
+            return OperationResult.Fail($"Task with id {id} not found.");
         }
-    
-        tasks.Remove(task);
+
         await _repository.DeleteTaskAsync(id);
+        
         _logger.LogInformation($"Task {id} deleted.");
-        return "Task deleted";
+        return OperationResult.Ok("Task deleted");
     }
 
     public async Task<List<TaskItem>> GetTasksByFilterAsync(TaskFilter filter)
