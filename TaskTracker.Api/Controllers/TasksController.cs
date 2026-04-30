@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using TaskTracker.Api.Common;
 using TaskTracker.Api.Models;
 using TaskTracker.Api.Services;
 
@@ -28,7 +29,13 @@ public class TasksController : ControllerBase
         var result = await _taskService.GetTaskByIdAsync(id);
 
         if (!result.Success || result.Data == null)
-            return NotFound(new { message = result.Message});
+        {
+            return result.ErrorType switch
+            {
+                ErrorType.NotFound => NotFound(new { message = result.Message }),
+                _ => BadRequest(new { message = result.Message })
+            };
+        }
         
         return Ok(result.Data);
     }
@@ -44,16 +51,36 @@ public class TasksController : ControllerBase
         return Ok(new { message = result.Message });
     }
 
+    [HttpPatch("{id}:int/complete")]
+    public async Task<ActionResult<TaskItem>> MarkTaskAsDoneAsync(int id)
+    {
+        var result = await _taskService.MarkTaskAsDoneAsync(id);
+
+        if (!result.Success)
+        {
+            return result.ErrorType switch
+            {
+                ErrorType.NotFound => NotFound(new { message = result.Message }),
+                ErrorType.Validation => BadRequest(new { message = result.Message }),
+                _ => BadRequest(new { message = result.Message })
+            };
+        }
+        
+        return Ok(new { message = result.Message });
+    }
+
     [HttpPut("{id:int}")]
     public async Task<ActionResult<TaskItem>> UpdateTaskTitle(int id, [FromBody] UpdateTaskTitleRequest request)
     {
         var result = await _taskService.UpdateTaskTitleAsync(id, request.Title);
         if (!result.Success)
         {
-            if (result.Message.Contains("not found"))
-                return NotFound(new { message = result.Message });
-            
-            return BadRequest(new { message = result.Message });
+            return result.ErrorType switch
+            {
+                ErrorType.NotFound => NotFound(new {message = result.Message}),
+                ErrorType.Validation => BadRequest(new {message = result.Message}),
+                _ => BadRequest(new {message = result.Message}),
+            };
         }
 
         return Ok(new { message = result.Message });
@@ -63,9 +90,13 @@ public class TasksController : ControllerBase
     public async Task<ActionResult> DeleteTaskByIdAsync(int id)
     {
         var result = await _taskService.DeleteTaskAsync(id);
-        
+
         if (!result.Success)
-            return NotFound(new {message = result.Message });
+            return result.ErrorType switch
+            {
+                ErrorType.NotFound => NotFound(new { message = result.Message }),
+                _ => BadRequest(new { message = result.Message })
+            };
         
         return Ok(new { message = result.Message });
     }

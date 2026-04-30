@@ -43,7 +43,7 @@ public class TaskService
         if (task is null)
         {
             _logger.LogWarning($"Task {id} not found");
-            return OperationResult<TaskItem>.Fail($"Task with id {id} not found");
+            return OperationResult<TaskItem>.Fail($"Task with id {id} not found", ErrorType.NotFound);
         }
 
         return OperationResult<TaskItem>.Ok(task);
@@ -54,7 +54,7 @@ public class TaskService
         if (string.IsNullOrWhiteSpace(title))
         {
             _logger.LogWarning("Attempt to add task with empty title");
-            return OperationResult.Fail("Title task should not be empty");
+            return OperationResult.Fail("Title task should not be empty", ErrorType.Validation);
         }
 
         TaskItem newTask = new TaskItem
@@ -73,16 +73,17 @@ public class TaskService
 
     public async Task<OperationResult> MarkTaskAsDoneAsync(int id)
     {
-        TaskItem? task = tasks.FirstOrDefault(t => t.Id == id);
+        TaskItem? task = await _repository.GetTaskByIdAsync(id);
         
         if (task == null)
         {
             _logger.LogWarning($"Task with id {id} not found.");
-            return OperationResult.Fail($"Task with id {id} not found.");
+            return OperationResult.Fail($"Task with id {id} not found.", ErrorType.NotFound);
         }
 
         task.IsDone = true;
         await _repository.UpdateTaskAsync(task);
+        
         _logger.LogInformation($"Task {id} marked as done.");
         return OperationResult.Ok($"Task {id} is done.");
     }
@@ -92,13 +93,13 @@ public class TaskService
         if (string.IsNullOrWhiteSpace(title))
         {
             _logger.LogWarning("Attempt to rename task {TaskId} with empty title.", id);
-            return OperationResult.Fail("Task title should not be empty.");
+            return OperationResult.Fail("Task title should not be empty.", ErrorType.Validation);
         }
 
         TaskItem? task = await _repository.GetTaskByIdAsync(id);
         
         if (task is null)
-            return OperationResult.Fail($"Task with id {id} not found.");
+            return OperationResult.Fail($"Task with id {id} not found.", ErrorType.NotFound);
         
         task.Title = title;
         await _repository.UpdateTaskAsync(task);
@@ -113,7 +114,7 @@ public class TaskService
         if (task == null)
         {
             _logger.LogWarning("Task {TaskId} not found for delete.", id);
-            return OperationResult.Fail($"Task with id {id} not found.");
+            return OperationResult.Fail($"Task with id {id} not found.", ErrorType.NotFound);
         }
 
         await _repository.DeleteTaskAsync(id);
